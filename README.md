@@ -3,27 +3,30 @@
 A data engineering pipeline that ingests daily OHLCV (Open, High, Low, Close, Volume) data for Egyptian Exchange (EGX) stocks, runs automated data quality checks, and produces SQL analytical views for financial analysis.
 
 ## Architecture
+
+```
 Yahoo Finance API
-│
-▼
-Python Ingest
-(yfinance + SQLAlchemy)
-│
-▼
-PostgreSQL Database
-┌─────────────────┐
-│ stocks          │
-│ daily_prices    │
-│ data_quality_log│
-└─────────────────┘
-│
-▼
-Quality Checks
-(6 automated checks)
-│
-▼
-SQL Analytical Views
-(moving averages, returns, volatility)
+       │
+       ▼
+ Python Ingest
+ (yfinance + SQLAlchemy)
+       │
+       ▼
+ PostgreSQL Database
+ ┌─────────────────┐
+ │ stocks          │
+ │ daily_prices    │
+ │ data_quality_log│
+ └─────────────────┘
+       │
+       ▼
+ Quality Checks
+ (6 automated checks)
+       │
+       ▼
+ SQL Analytical Views
+ (moving averages, returns, volatility)
+```
 ## Schema Design
 
 ### `stocks`
