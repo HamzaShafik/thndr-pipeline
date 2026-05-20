@@ -1,6 +1,6 @@
 # EGX Market Data Pipeline
 
-A data engineering pipeline that ingests daily OHLCV (Open, High, Low, Close, Volume) data for Egyptian Exchange (EGX) stocks, runs automated data quality checks, and produces SQL analytical views for financial analysis.
+A data engineering pipeline that ingests daily OHLCV (Open, High, Low, Close, Volume) data for Egyptian Exchange (EGX) stocks, runs automated data quality checks, and produces analytical models using dbt.
 
 ## Architecture
 
@@ -12,7 +12,7 @@ Yahoo Finance API
  (yfinance + SQLAlchemy)
        │
        ▼
- PostgreSQL Database
+PostgreSQL Database
  ┌─────────────────┐
  │ stocks          │
  │ daily_prices    │
@@ -24,9 +24,17 @@ Yahoo Finance API
  (6 automated checks)
        │
        ▼
- SQL Analytical Views
- (moving averages, returns, volatility)
+ dbt Models
+ ┌─────────────────────┐
+ │ staging/            │
+ │   stg_daily_prices  │
+ │   stg_stocks        │
+ │ marts/              │
+ │   mart_stock_analytics│
+ │   mart_ticker_summary │
+ └─────────────────────┘
 ```
+
 ## Schema Design
 
 ### `stocks`
@@ -46,18 +54,30 @@ Audit table that logs any data quality violations caught during pipeline runs.
 
 **NUMERIC over FLOAT for prices:** Floating point types cannot represent all decimal values exactly. In financial contexts, `0.1 + 0.2 != 0.3` in IEEE 754. PostgreSQL's `NUMERIC` type is exact and safe for monetary values.
 
-**Quality checks before transforms:** The pipeline runs data quality checks before producing analytical views. Downstream consumers should never see unvalidated data.
+**Quality checks before transforms:** The pipeline runs data quality checks before dbt models are refreshed. Downstream consumers should never see unvalidated data.
 
-**Views over materialised tables for analytics:** Analytical views are computed at query time, keeping the pipeline simple. In production, these would be materialised and refreshed incrementally.
+**dbt for the analytical layer:** Models are organised into staging (clean and validate raw data) and marts (business-level analytics). This separation makes the lineage clear and each layer independently testable.
 
-## Analytical Views
+## dbt Models
 
-| View | Description |
+### Staging
+| Model | Description |
 |---|---|
-| `moving_averages` | 20-day and 50-day moving averages per ticker |
-| `daily_returns` | Daily percentage return vs previous close |
-| `volatility` | 20-day rolling standard deviation of close price |
-| `ticker_summary` | Aggregate stats per ticker (min, max, avg, std) |
+| `stg_daily_prices` | Cleans raw price data — filters nulls, negative prices, and future dates |
+| `stg_stocks` | Passes through stock metadata from the raw source |
+
+### Marts
+| Model | Description |
+|---|---|
+| `mart_stock_analytics` | Per-ticker daily analytics: 20/50-day moving averages, daily return %, 20-day rolling volatility |
+| `mart_ticker_summary` | Aggregate stats per ticker: min, max, avg, std close, trading day count |
+
+## dbt Tests
+
+| Test | Column |
+|---|---|
+| `not_null` | `daily_prices.ticker`, `daily_prices.price_date`, `daily_prices.close`, `stocks.ticker` |
+| `unique` | `stocks.ticker` |
 
 ## Data Quality Checks
 
@@ -73,7 +93,8 @@ Audit table that logs any data quality violations caught during pipeline runs.
 ## Stack
 
 - **Python** — ingestion, orchestration, quality checks
-- **PostgreSQL** — storage and analytics
+- **PostgreSQL** — storage
+- **dbt Core** — data transformation and testing
 - **SQLAlchemy** — database connection and query execution
 - **yfinance** — Yahoo Finance API wrapper
 - **Git** — version control
@@ -81,33 +102,36 @@ Audit table that logs any data quality violations caught during pipeline runs.
 ## How to Run
 
 1. Clone the repository
-
 2. Install dependencies:
 ```bash
-   pip install yfinance sqlalchemy psycopg2-binary pandas python-dotenv
+   pip install yfinance sqlalchemy psycopg2-binary pandas python-dotenv dbt-postgres
 ```
-
 3. Create a `.env` file in the root:
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=thndr_pipeline
-DB_USER=postgres
-DB_PASSWORD=your_password
-
-4. Create the database and schema in PostgreSQL using `schema.sql`
-
+```
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_NAME=thndr_pipeline
+   DB_USER=postgres
+   DB_PASSWORD=your_password
+```
+4. Create the database and schema using the SQL in `schema.sql`
 5. Run the full pipeline:
 ```bash
    python src/pipeline.py
 ```
+6. Run dbt models:
+```bash
+   cd egx_analytics
+   dbt run
+   dbt test
+```
 
 ## What I'd Add in Production
 
-- **Airflow DAGs** to replace the manual pipeline runner with scheduled, monitored, retriable tasks
-- **dbt models** for the analytical layer with tests, documentation, and lineage
+- **Airflow DAGs** to schedule, monitor, and retry the pipeline automatically
+- **Incremental dbt models** — currently rebuilds all views on every run; production would process only new trading days
 - **Alerting** on quality check failures via email or Slack
-- **Incremental ingestion** — currently fetches 6 months on every run; production would fetch only new trading days since last run
-- **Cloud deployment** — GCS for raw data storage, BigQuery as the warehouse, Cloud Composer for orchestration
+- **Cloud deployment** — GCS for raw storage, BigQuery as the warehouse, Cloud Composer for orchestration
 
 ## Tickers Tracked
 
